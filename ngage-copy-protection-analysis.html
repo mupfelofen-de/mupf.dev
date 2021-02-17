@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="x-ua-compatible" content="ie=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <meta property="og:title" content="A sketchy analysis of the Nokia N-Gage copy protection mechanisms" />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://mupf.dev/ngage-copy-protection-analysis.html" />
+    <meta property="og:image" content="https://mupf.dev/img/ng-1200x1200.png" />
+
+    <title>mupf.dev</title>
+    <link rel="stylesheet" href="/style.min.css">
+    <link rel="stylesheet" href="/mupf.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=2">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=2">
+    <link rel="manifest" href="/site.webmanifest?v=2">
+  </head>
+
+  <body>
+    <h1>mupf.dev</h1>
+
+    <p class="author">Michael Fitzmayer <br> February 17th, 2021</p>
+
+    <div class="abstract">
+      <p>
+        I recently had access to a licenced IDA Pro<label for="sn-1"
+        class="sidenote-toggle
+        sidenote-number"></label><input type="checkbox" id="sn-1"
+        class="sidenote-toggle" /><span class="sidenote">The IDA
+        Disassembler and Debugger is an interactive, programmable,
+        extensible, multi-processor disassembler.  IDA has become the
+        de-facto standard for the analysis of hostile code,
+        vulnerability research and commercial-off-the-shelf
+        validation.</span> workstation.  As a great Nokia N-Gage
+        enthusiast, I took this opportunity to take a closer look at the
+        copy protection mechanisms for this platform.
+      </p>
+
+      <p>Here I document my findings and my modus operandi.</p>
+    </div>
+
+    <h2>A sketchy analysis of the Nokia N-Gage copy protection
+    mechanisms</h2>
+
+    <nav class="toc">
+      <h2>Contents</h2>
+      <ol>
+          <li><a href="#authors-note">Author's note</a></li>
+          <li><a href="#preface">Preface</a></li>
+          <li><a href="#folder-comparison">Folder comparison: Spot the changes</a></li>
+          <li><a href="#file-header">The file header: Get an overview</a></li>
+          <li><a href="#e32image-format">The E32Image format</a></li>
+          <li><a href="#data-comparison">Data comparison: Pinpoint the changes</a></li>
+          <li><a href="#data-analysis">Data analysis: Understand the changes</a></li>
+          <li><a href="#import-table">The import table: Put things in order</a></li>
+          <li><a href="#resume-preface">Résumé &amp; Preface</a></li>
+      </ol>
+    </nav>
+
+    <h3 id="authors-note">Author's note</h3>
+
+    <p>
+      <mark>I do not want to encourage copyright
+      infringement</mark>. Therefore, this article is for educational
+      purposes only.  Do not misuse this information to do something
+      that
+      <mark>may be illegal in your country.  You are responsible for
+      your own actions</mark>.
+    </p>
+
+    <h3 id="preface">Preface</h3>
+
+    <p>
+      When I started writing this article, I knew very little about
+      Symbian OS.  Therefore, it should be noted that this is also a
+      continuous learning process for me.  While I consider the
+      documentation of these findings and observations a way to learn
+      more about the ARM assembly language and to gain a basic
+      understanding of data analysis and the process of reverse
+      engineering, I must apologise for any inaccuracies you may
+      encounter.  I consider myself quite technically proficient, but
+      nevertheless this subject is relatively unexplored and new to me.
+    </p>
+
+    <p>
+      My goal is to make this document as understandable and accessible
+      as possible.  I do not want to get too bogged down in the
+      technical details of the N-Gage and Symbian OS, but I want to find
+      out in a self-experiment whether I can reconstruct and apply the
+      techniques developed by the warez groups back in the mid-2000s.
+    </p>
+
+    <p>
+      This article will focus on the differences between a retail dump
+      of a game and a cracked version of the same title which I both
+      obtained from the <a href="https://archive.org/">Internet
+      Archive</a>, in order to better understand the copy protection
+      mechanisms, to ultimately adapt and apply the techniques developed
+      by the crackers.
+    </p>
+
+    <h3 id="folder-comparison">Folder comparison: Spot the changes</h3>
+
+    <p>
+      Before I could analyse the changes, I had to identify them first.
+    </p>
+
+    <p>
+      In order to compare the folders containing the files of the
+      cracked and uncracked version to each other, I used
+      WinMerge.<label for="sn-2" class="sidenote-toggle
+      sidenote-number"></label><input type="checkbox" id="sn-2"
+      class="sidenote-toggle"
+      /><span class="sidenote"> <a href="https://winmerge.org/">WinMerge</a>
+      is an Open Source differencing and merging tool for Windows.
+      WinMerge can compare both folders and files, presenting
+      differences in a visual text format that is easy to understand and
+      handle.</span>
+    </p>
+
+    <p>
+      For the purpose of this research, I worked on one of the more
+      recent games that was previously cracked by a group
+      called <i>PWNPDA</i> without disabling the N-Gage Arena feature,
+      thus making this crack limited to the essentials, with minimal
+      impact and changes to the game files.  Perfect!
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-folder-comparison.png" alt="Folder
+      comparison" />
+    </p>
+
+    <p>
+      As you can see, only a single file has been altered here.  While
+      this is not the case with all N-Gage games, it gives me an
+      opportunity to take a closer look and analyse the crack in detail.
+    </p>
+
+    <p>
+      It is also worth mentioning that other games have a more complex
+      copy protection mechanism such as the N-Gage SDK Extension for
+      Enhanced Copy Protection (ECP), which was ultimately also
+      defeated.
+    </p>
+
+    <p>
+      The warez group <i>BiNPDA</i> for instance, created their very own
+      proprietary cracking method to achieve this.  Most games released
+      by them use a loader, developed for this particular reason, which
+      patches the uncracked executable file, while also faking several
+      hardware conditions such as MMC size, MMC ID, etc.
+    </p>
+
+    <p>
+      But the copy protection scheme I document here was the most
+      commonly used until the end of the N-Gage era.
+    </p>
+
+    <h3 id="file-header">The file header: Get an overview</h3>
+
+    <p>
+      Before I could start analysing the data, it was only logical to
+      get an overview of how the executable file is organised.  To
+      achieve this, I opened the executable file using
+      E32Explorer<label for="sn-3" class="sidenote-toggle
+      sidenote-number"></label><input type="checkbox" id="sn-3"
+      class="sidenote-toggle"
+      /><span class="sidenote"><a href="https://github.com/mrRosset/E32Explorer">E32Explorer</a>
+      is a simple tool to visualize the different parts of an Symbian OS
+      E32Image and of a TRomImage.</span> and looked at the header:
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-file-header.png" alt="File header" />
+    </p>
+
+    <p>
+      While most of this information was irrelevant to me and I could
+      ignore it, I was very interested in the code and import sections.
+    </p>
+
+    <p>
+      I could also ignore the data section since it contains initialised
+      data.  Moreover, most Symbian OS applications are found
+      as <code>.app</code> or <code>.dll</code> files, so this section
+      is usually inexistent in the first place.
+    </p>
+
+    <p>
+      Furthermore, it is useful to calculate the size of the individual
+      sections, but more on that later on.
+    </p>
+
+    <p id="dll_count">
+      I also noted the value of <code>dll_count</code>, because I knew I
+      might need it later.
+    </p>
+
+    <br />
+
+    <div>
+      <table>
+        <thead>
+          <tr>
+            <th>Section</th>
+            <th>Offset ID</th>
+            <th>Offset</th>
+            <th>Section size</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Code</code></td>
+            <td><code>code_offset</code></td>
+            <td><code>7Ch</code></td>
+            <td><code>1B4120h</code></td>
+          </tr>
+          <tr>
+            <td><code>Import</code></td>
+            <td><code>import_offset</code></td>
+            <td><code>1B419Ch</code></td>
+            <td><code>87Ch</code></td>
+          </tr>
+          <tr>
+            <td><code>Relocation</code></td>
+            <td><code>code_relocation_offset</code></td>
+            <td><code>1B4A18h</code></td>
+            <td><code>-</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="e32image-format">The E32Image format</h3>
+
+    <p>
+      For completeness, here is an overview of the E32Image
+      format<label for="sn-4" class="sidenote-toggle
+      sidenote-number"></label><input type="checkbox" id="sn-4"
+      class="sidenote-toggle" /><span class="sidenote">Source:
+      <a href="https://web.archive.org/web/20141018215857/http://www.antonypranata.com/node/10">antonypranata.com</a>
+      (archived).</span>:
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-e32image-format.png" alt="E32Image format" />
+    </p>
+
+    <div>
+      <ul>
+        <li>
+          <i>Code section</i>, contains three parts: text section,
+          export address table and import address table.  The text
+          section contains all the object files (<code>.obj</code>) of
+          all your source code.  The export address table lists all the
+          exported functions you have in your program.  The import
+          address table lists all the imported functions used in your
+          program.
+        </li>
+        <li>
+          <i>BSS section</i>, contains un-initialized data. This section
+          is usually not available in most Symbian OS applications.
+        </li>
+        <li>
+          <i>Data section</i>, contains initialized data. Since most
+          Symbian OS applications are found as <code>.app</code>
+          or <code>.dll</code> files, this section usually does not
+          exist either.
+        </li>
+        <li>
+          <i>Import section</i>, contains the information about all
+          imported functions used by the program.
+        </li>
+        <li>
+          <i>Relocation section</i>, contains the relocation table
+          needed by Symbian OS loader to load the program.
+        </li>
+      </ul>
+    </div>
+
+    <h3 id="data-comparison">Data comparison: Pinpoint the changes</h3>
+
+    <p>
+      To get an overview of the modifications made, still without
+      understanding exactly what they did, I opened HxD<label for="sn-5"
+      class="sidenote-toggle
+      sidenote-number"></label><input type="checkbox" id="sn-5"
+      class="sidenote-toggle" /><span class="sidenote">HxD is a
+      carefully designed and fast hex editor which, additionally to raw
+      disk editing and modifying of main memory (RAM), handles files of
+      any size.</span> and pressed <code>Ctrl+k</code> to start a hex
+      comparison of the cracked and uncracked executable:
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-app-comparison.png" alt="App comparison" />
+    </p>
+
+    <p>
+      Now I needed something to write, so that I could document the
+      modifications made and the corresponding file offsets.  The
+      following information is important: the original hex value, the
+      modified hex value and the offset for each consecutive data set.
+      The offset is displayed as a hexadecimal value in the lower left
+      corner of HxD.  I was also able to assign the file offsets to a
+      corresponding section, as I know exactly where each section
+      begins:
+    </p>
+
+    <br />
+
+    <div>
+      <table>
+        <tbody>
+          <tr>
+            <th><code>Uncracked</code></th>
+            <th scope="row" style="background: LightPink;"><code>04 C0 9F E5 00 C0 9C E5 1C FF 2F E1</code></th>
+          </tr>
+          <tr>
+            <th><code>Cracked</code></th>
+            <th scope="row" style="background: Aquamarine;"><code>1E FF 2F E1 00 C0 9C E5 1C FF 2F E1</code></th>
+          </tr>
+          <tr>
+            <th><code>Offset</code></th>
+            <th><code>192068h</code>
+          </tr>
+          <tr>
+            <th><code>Section</code></th>
+            <th><code>Code</code></th>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>
+      In the same manner I noted down all further changes:
+    </p>
+
+    <br />
+
+    <div>
+      <table>
+        <tbody>
+          <tr>
+            <th><code>Uncracked</code></th>
+            <th scope="row" style="background: LightPink;"><code>3E 01 00 00</code></th>
+          </tr>
+          <tr>
+            <th><code>Cracked</code></th>
+            <th scope="row" style="background: Aquamarine;"><code>D6 00 00 00</code></th>
+          </tr>
+          <tr>
+            <th><code>Offset</code></th>
+            <th><code>1B3D04h</code>
+          </tr>
+          <tr>
+            <th><code>Section</code></th>
+            <th><code>Code</code></th>
+          </tr>
+          <tr>
+            <th><code>Uncracked</code></th>
+            <th scope="row" style="background: LightPink;"><code>02 00 00 00 01 00 00 00</code></th>
+          </tr>
+          <tr>
+            <th><code>Cracked</code></th>
+            <th scope="row" style="background: Aquamarine;"><code>01 00 00 00 00 00 00 00</code></th>
+          </tr>
+          <tr>
+            <th><code>Offset</code></th>
+            <th><code>1B4148h</code>
+          </tr>
+          <tr>
+            <th><code>Section</code></th>
+            <th><code>Code</code></th>
+          </tr>
+          <tr>
+            <th><code>Uncracked</code></th>
+            <th scope="row" style="background: LightPink;"><code>02 00 00 00 28 08 00 00 01 00 00 00 01 00 00 00</code></th>
+          </tr>
+          <tr>
+            <th><code>Cracked</code></th>
+            <th scope="row" style="background: Aquamarine;"><code>01 00 00 00 3E 08 00 00 01 00 00 00 00 00 00 00</code></th>
+          </tr>
+          <tr>
+            <th><code>Offset</code></th>
+            <th><code>1B4148h</code>
+          </tr>
+          <tr>
+            <th><code>Section</code></th>
+            <th><code>Code</code></th>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>
+      I did not need to make a note of the last dataset, as I could see
+      the reason for the change in the section <code>Decoded
+      text</code>:
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-vanities.png" alt="Vanities" />
+    </p>
+
+    <p>
+      The name of the <code>DLL</code> to be loaded was simply
+      overwritten with vanities and in this curious case they did not
+      even use their own signature.  The crackers merely copied this
+      part from another group.
+    </p>
+
+    <h3 id="data-analysis"> Data analysis: Understand the changes</h3>
+
+    <p>
+      Next, comes the most interesting part.  I analysed the actual data
+      at the file offsets I have noted down using IDA Pro. When I opened
+      the file in IDA for the first time, it was important that I
+      selected the correct processor type, and architecture, so that the
+      program could disassemble the file correctly:
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-ida-pro-load-file.png" alt="Load
+      file in IDA Pro" />
+    </p>
+
+    <p>
+      After loading the file into IDA, I selected the <code>Hex
+      view</code> and navigated to the first noted file offset.  The
+      offset is there, in the lower left corner, together with a
+      reference that points to the disassembled code:
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-ida-pro-nokiafc.png" alt="NokiaFC" />
+    </p>
+
+    <p>
+      To have a closer look at this part of the program in detail, I
+      switched back to the disassembly view (<code>IDA View</code>).  I
+      also activated <code>Auto comments</code> under <code>Options →
+      General</code>.  This is a very helpful setting to get a rough
+      idea of what the code does, even if one is not familiar with the
+      ARM assembly language.
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-ida-pro-nokiafc-disasm.png"
+      alt="NokiaFC disassembly" />
+    </p>
+
+    <p>
+      So, what exactly is happening here? Let's summarise:
+    </p>
+
+    <p>
+      As I already knew, this section is in the <code>.text</code> or
+      code section.  So, the section of the program's virtual address
+      space that contains executable instructions.  Let's go through the
+      code line by line:
+    </p>
+
+    <p>
+      <code>LDR R12, = __imp_NOKIAFC_1 (04 C0 9F E5)</code>
+    <p>
+
+    <p>
+      Basically, <code>LDR</code> is used to load something from memory
+      into a register.  As the prefix <code>__imp_</code> suggests,
+      an imported function is loaded at this point.  To understand the
+      purpose of this function, I would have to analyse it separately;
+      it is located in the file <code>nokiafc.dll</code> and is part of
+      the device firmware.  This would go beyond the scope of this
+      article.  In a nutshell: the instruction gets the address of an
+      imported function.
+    </p>
+
+    <p>
+      Then, it loads the value located at the specified memory address
+      and stores it in a register:
+    </p>
+
+    <p>
+      <code>LDR R12, [R12] (00 C0 9C E5)</code>
+    </p>
+
+    <p>
+      And last but not least, I jumped to the loaded function with the
+      instruction <code>BX</code>:
+    </p>
+
+    <p>
+      <code>BX R12 (1C FF 2F E1)</code>
+    </p>
+
+    <p>
+      Now, let's take a closer look at what the crackers have changed
+      and what this means for the execution of this function:
+    </p>
+
+    <p>
+      <code>BX LR (1E FF 2F E1)</code>
+    </p>
+
+    <p>
+      Essentially, only the first instruction has been replaced, which
+      means that the subsequent ones are no longer being executed.  I
+      could, just as well, have overwritten them with
+      0.  <code>LR</code> usually holds the return address.  It also
+      means that this is a return from a function and signifies that
+      this function will be left immediately.
+    </p>
+
+    <p>
+      Tip: an easy way to find out which instruction is represented by a
+      so-called immediate-value (<code>1E FF 2F E1</code>) is to use an
+      online disassembler like ODA.<label for="sn-6"
+      class="sidenote-toggle
+      sidenote-number"></label><input type="checkbox" id="sn-6"
+      class="sidenote-toggle" /><span class="sidenote">A lightweight,
+      online service for when you don’t have the time, resources, or
+      requirements to use a heavier-weight alternative. Explore
+      executables by dissecting its sections, strings, symbols, raw hex
+      and machine level instructions:
+      <br /><a href="https://onlinedisassembler.com/odaweb/">onlinedisassembler.com</a>.</span>
+      If you want to use it alongside IDA Pro, it must be configured to
+      use the armv4t platform, little-endian and no-force-thumb:
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-online-disassembler.png" alt="ODA" />
+    </p>
+
+    <p>
+      In addition, the following is a very detailed description of how
+      this value is actually encoded:
+      <a href="https://alisdair.mcdiarmid.org/arm-immediate-value-encoding/">ARM
+      immediate value encoding</a>
+    </p>
+
+    <p>
+      And on we go.
+    </p>
+
+    <p>
+      Here is the second change made within the code section:
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-ida-pro-cone318.png"
+      alt="CONE_318" />
+    </p>
+
+    <p>
+      After switching to the disassembly view (by the way, it is
+      advisable to always use the hex view first, otherwise you run the
+      risk of mixing-up the virtual address location with the file
+      offset):
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-ida-pro-cone318.png"
+      alt="CONE_318 disassembly" />
+    </p>
+
+    <p>
+      Why does it look so different now?  The reason is that this is the
+      import address table (IAT) within the code section.  The import
+      address table lists all the imported functions used in the
+      program.
+    <p>
+
+    <p>
+      Note that in Symbian OS, all functions are imported by ordinal
+      (not by function name).  The idea is to make the library file size
+      smaller and that is exactly what I have found here: the ordinal
+      number 318 as hex value in little-endian notation:
+    </p>
+
+    <p>
+      <code>3E 01 → 13Eh → 318</code>
+    </p>
+
+    <p>
+      This ordinal number is replaced by the number 214:
+    </p>
+
+    <p>
+      <code>D6 00 → D6h → 214</code>
+    </p>
+
+    <p>
+      At this stage, the reason for this change is not clear to me.
+      Nevertheless, I have seen this in several cracked games while
+      doing my research.  I do not wanna delve into this any deeper.
+    </p>
+
+    <p>
+      Now I have come to the last modification where IDA could help me.
+      Strictly speaking, these are two successive changes:
+    </p>
+
+    <p>
+      <img class="centered"
+      src="img/ng-cmda-audio-output-stream-pad-function.png"
+      alt="CMdaAudioOutputStreamPadFunction" />
+    </p>
+
+    <p>
+      Here the ordinal number of the
+      function <code>CMdaAudioOutputStreamPadFunction(void)</code> is
+      changed from 2 to 1:
+    </p>
+
+    <p>
+      <code>02 00 00 00 → 01 00 00 00</code>
+    </p>
+
+    <p>
+      At this point there are probably some system-specific
+      characteristics.  From what I have been able to find out so far,
+      the ordinal number 2 means that the function contacts
+      the <i>shared data server</i>.  Again, I do not want to research
+      the details.
+    </p>
+
+    <p>
+      And now to the last part, which has to be modified within the code
+      section:
+    </p>
+
+    <p>
+      <img class="centered" src="img/ng-ida-pro-nokiafc-ordinal.png"
+      alt="NokiaFC ordinal number" />
+    </p>
+
+    <p>
+      Does this function look familiar?  Yes, of course.  But here, the
+      ordinal number is set from 1 to 0, which simply means
+      non-existent:
+    </p>
+
+    <p>
+      <code>01 00 00 00 → 00 00 00 00</code>
+    </p>
+
+    <h3 id="import-table">The import table: Put things in order</h3>
+
+    <p>
+      Last but not least, I reviewed the import section.  For this, I
+      opened the file with the hex-editor and scrolled down to the file
+      offset in the import section as specified in the
+      <a href="#file-header">file header</a> (<code>1B419Ch</code>).
+      Here is a brief summary of how it is structured:
+    </p>
+
+    <p>
+      <img class="centered"
+           src="img/ng-ida-pro-import-section-header.png" alt="Import
+           section header" />
+    </p>
+
+    <p>
+      The first Dword (4 Byte) of the import section contains the total
+      size of the section.  In this case:
+    </p>
+
+    <p>
+      <code>7C 08 00 00 → 87Ch → 2172</code>
+    </p>
+
+    <p>
+      This is followed by import blocks for each imported DLL and how
+      many DLLs are imported in total.  I have learned earlier from the
+      header (<code><a href="#dll_count">dll_count</a></code>), in this
+      case, a total of 16.
+    </p>
+
+    <p>
+      Each block begins with 2 Dwords. These are the file offset to the
+      <code>DLL</code> filename and the number of imported functions.
+      Please note that the offset is always specified relative to the
+      import section and not relative to the beginning of the file.
+      This is followed by a list of the ordinal numbers of the imported
+      functions, before the next block begins.
+    </p>
+
+    <p>
+      To make this more clear, this is the first block in detail:
+    </p>
+
+    <p>
+      <img class="centered"
+           src="img/ng-ida-pro-import-section-example.png" alt="Import
+           section example" />
+    </p>
+
+    <p>
+      As I now knew, this is the file offset to the <code>DLL</code>
+      filename relative to the import section:
+    </p>
+
+    <p>
+      <code>90 06 00 00 → 690h + 1B419Ch = 1B482C</code>
+    </p>
+
+    <p>
+      After I jumped to this file offset, I quickly recognised the file
+      name of the <code>DLL</code> from which the functions are
+      imported:
+    </p>
+
+    <p>
+      <img class="centered"
+           src="img/ng-ida-pro-import-section-dll-name.png" alt="Import
+           section DLL name" />
+    </p>
+
+    <p>
+      Next, I immediately saw that a total of 4 functions are imported
+      from this file:
+    </p>
+
+    <p>
+      <img class="centered"
+           src="img/ng-ida-pro-import-section-entry-size.png"
+           alt="Import section entry size" />
+    </p>
+
+    <p>
+      This means that the following 4 Dwords contain the ordinal numbers
+      of these functions:
+    </p>
+
+    <p>
+      <img class="centered"
+           src="img/ng-ida-pro-import-section-entry-ordinals.png"
+           alt="Import section entry ordinals" />
+    </p>
+
+    <p>
+      <code>03 00 00 00 → 03h → 3</code><br />
+      <code>06 00 00 00 → 06h → 6</code><br />
+      <code>1B 00 00 00 → 1Bh → 27</code><br />
+      <code>47 00 00 00 → 47h → 71</code>
+    </p>
+
+    <p>
+      That's about it.  Simple, right?  I continued this until I reached
+      file offset <code>1B47C0h</code> to get an idea of what has been
+      modified there.
+    </p>
+
+    <br />
+
+    <div>
+      <table>
+        <tbody>
+          <tr>
+            <th><code>Uncracked</code></th>
+            <th scope="row" style="background: LightPink;"><code>02 00 00 00 28 08 00 00 01 00 00 00 01 00 00 00</code></th>
+          </tr>
+          <tr>
+            <th><code>Cracked</code></th>
+            <th scope="row" style="background: Aquamarine;"><code>01 00 00 00 3E 08 00 00 01 00 00 00 00 00 00 00</code></th>
+          </tr>
+          <tr>
+            <th><code>Offset</code></th>
+            <th><code>1B47C0h</code>
+          </tr>
+          <tr>
+            <th><code>Section</code></th>
+            <th><code>Code</code></th>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>
+      After taking a closer look at the previously noted alterations,
+      there is one number that stood out in particular:
+    </p>
+
+    <p><code>28 08 00 00 → 828h</code></p>
+
+    <p>
+      I could verify this assumption by adding the import offset and
+      looking at the corresponding position in a hex editor:
+    </p>
+
+    <p>
+      <code>828h + 1B419Ch = 1B49C4h</code>
+    </p>
+
+    <p>
+      <img class="centered"
+           src="img/ng-ida-pro-import-section-nokiafc-offset.png"
+           alt="Import section NokiaFC offset" />
+    </p>
+
+    <p>
+      As I could see, the file offset which refers to the file name
+      NOKIAFC.DLL had been altered.  Let's see where it points to now:
+    </p>
+
+    <p>
+      <code>83Eh + 1B419Ch = 1B49DAh</code>
+    </p>
+
+    <p>
+      Apparently, only the next valid <code>DLL</code> was referenced.
+      I think such an entry must merely not be invalid.
+    </p>
+
+    <p>
+      <img class="centered"
+           src="img/ng-ida-pro-import-section-nokiafc-new-offset.png"
+           alt="Import section NokiaFC new offset" />
+    </p>
+
+    <p>
+      The two following Dwords only indicate that only one function is
+      imported here. However, the ordinal number 1 is to be replaced by
+      0, i.e. non-existent.
+    </p>
+
+    <p>
+      So, the last small change can only be an ordinal number and I
+      could see from which file this change is made, if I simply
+      navigated back to the previous <code>DLL</code> file name offset
+      and checked what is behind it:
+    </p>
+
+    <p>
+      <img class="centered"
+           src="img/ng-ida-pro-import-section-mcas-offset.png"
+           alt="Import section MediaClientAudioStream offset" />
+    </p>
+
+    <p>
+      <code>03 08 → 803h + 1B419Ch = 1B499Fh</code>
+    </p>
+
+    <p>
+      <img class="centered"
+           src="img/ng-ida-pro-import-section-mcas-dll-name.png"
+           alt="Import section MediaClientAudioStream DLL name" />
+    </p>
+
+    <p>
+      This change is not at all surprising, since I already adjusted the
+      ordinal number of this function in the import address table
+      accordingly.  Now I also corrected it in the import section.
+    </p>
+
+    <h3 id="resume-preface">Résumé</h3>
+
+    <p>That's about it.</p>
+
+    <p>
+      Even though I did not manage to figure out every little detail of
+      the copy protection mechanisms, and frankly, this was never my
+      goal, I put my acquired findings to the test and tried to get a
+      copy of a previously unreleased game to work on my regular N-Gage.
+    </p>
+
+    <p>
+      This copy had been circulating on the net for quite some time,
+      after it was bought at an auction on eBay and made available on
+      the internet by the buyer shortly after.  Unfortunately, this copy
+      only ran on a special developer unit that was sold with the
+      game.
+    </p>
+
+    <p>
+      After applying the proper adjustments, the game launched without
+      any problems and I was able to experience a piece of lost video
+      game history first hand.<br />
+      I also learned a lot about ARM assembly language and the basic
+      process of reverse engineering.
+    </p>
+
+    <p>
+      An exciting and definitely educational experience.
+    </p>
+
+    <h3>Preface</h3>
+
+    <p>
+      I hope you enjoyed this article.  If not, let me know – I welcome
+      constructive feedback to improve the quality of my content.  If
+      you are interested in the Nokia N-Gage in general, you are
+      cordially invited to visit our small online community.  You can
+      find us
+      on <a href="https://discord.gg/dbUzqJ26vs">Discord</a>, <a href="https://t.me/nokia_ngage">Telegram</a>
+      and in #ngage on <a href="http://www.efnet.org">EFnet</a>.
+    </p>
+
+    <p>
+      At this point I would like to thank my friend Raz.  Without him,
+      this article would not have been possible.
+    </p>
+  </body>
+</html>
